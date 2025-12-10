@@ -57,13 +57,31 @@ jobs:
           cd analyzer/agent
           npm install 2>/dev/null || true
           
-          # Create temp file with changed files
-          echo "${{ steps.changed-files.outputs.all_changed_files }}" > /tmp/changed_files.txt
+          # Run analyzer on changed Java files
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
+          const javaAnalyzer = require('./src/analyzers/javaAnalyzer.js');
           
-          # Run analyzer on each Java file
-          node test-analyzers.js ${{ steps.changed-files.outputs.all_changed_files }} > /tmp/review_results.json 2>&1 || true
+          const files = '${{ steps.changed-files.outputs.all_changed_files }}'.split(' ').filter(f => f.endsWith('.java'));
+          const results = [];
           
-          # Output results
+          files.forEach(file => {
+            if (fs.existsSync(file)) {
+              const content = fs.readFileSync(file, 'utf8');
+              const violations = javaAnalyzer.analyze(content);
+              if (violations.length > 0) {
+                results.push({
+                  file: file,
+                  violations: violations
+                });
+              }
+            }
+          });
+          
+          console.log(JSON.stringify(results, null, 2));
+          " > /tmp/review_results.json 2>&1 || echo "[]" > /tmp/review_results.json
+          
           cat /tmp/review_results.json
 
       - name: Run Python Code Review
@@ -97,56 +115,135 @@ jobs:
           CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
           LANGUAGE: ${{ inputs.language }}
         run: |
-          # Create review summary
-          cat > /tmp/review_summary.md << 'EOF'
-          ## 🤖 Automated Code Review
+          # Parse Java violations from analyzer
+          if [ -f /tmp/review_results.json ] && [ "${{ inputs.language }}" == "java" ]; then
+            cat > /tmp/parse_violations.js << 'PARSER_EOF'
+          const fs = require('fs');
+          const path = require('path');
           
-          **Language:** ${{ inputs.language }}
-          **Severity Level:** ${{ inputs.severity }}
-          **Review Date:** $(date)
+          try {
+            const results = JSON.parse(fs.readFileSync('/tmp/review_results.json', 'utf8'));
+            let markdown = '## 🤖 Automated Code Review (Java)\n\n';
+            
+            if (!results || results.length === 0) {
+              markdown += '✅ **No violations detected!**\n\n';
+              markdown += 'All files passed code quality checks.\n';
+            } else {
+              let totalViolations = 0;
+              let errorCount = 0;
+              let warningCount = 0;
+              let infoCount = 0;
+              
+              markdown += '### Issues Found\n\n';
+              
+              results.forEach(result => {
+                const file = result.file;
+                markdown += `#### 📄 ${file}\n\n`;
+                
+                if (result.violations && result.violations.length > 0) {
+                  result.violations.forEach(violation => {
+                    totalViolations++;
+                    
+                    // Severity badge
+                    let badge = '⚠️';
+                    if (violation.severity === 'error') {
+                      badge = '❌';
+                      errorCount++;
+                    } else if (violation.severity === 'warning') {
+                      badge = '⚠️';
+                      warningCount++;
+                    } else {
+                      badge = 'ℹ️';
+                      infoCount++;
+                    }
+                    
+                    markdown += `${badge} **${violation.rule}** (Line ${violation.line || '?'})\n`;
+                    markdown += `   ${violation.message}\n`;
+                    if (violation.suggestion) {
+                      markdown += `   💡 Suggestion: ${violation.suggestion}\n`;
+                    }
+                    markdown += '\n';
+                  });
+                } else {
+                  markdown += '✅ No issues detected\n\n';
+                }
+              });
+              
+              markdown += `\n### Summary\n`;
+              markdown += `- **Total Issues**: ${totalViolations}\n`;
+              markdown += `- **Errors**: ${errorCount}\n`;
+              markdown += `- **Warnings**: ${warningCount}\n`;
+              markdown += `- **Info**: ${infoCount}\n`;
+            }
+            
+            console.log(markdown);
+          } catch (e) {
+            console.log('## 🤖 Code Review\n\nError parsing results: ' + e.message);
+          }
+          PARSER_EOF
           
-          EOF
-          
-          if [ -z "$CHANGED_FILES" ]; then
-            echo "No ${{ inputs.language }} files changed in this PR" >> /tmp/review_summary.md
+            node /tmp/parse_violations.js > /tmp/comment.md
+            cat /tmp/comment.md
           else
-            echo "### Files Analyzed:" >> /tmp/review_summary.md
-            echo "$CHANGED_FILES" | tr ' ' '\n' | sed 's/^/- /' >> /tmp/review_summary.md
-            echo "" >> /tmp/review_summary.md
-            
-            echo "### Issues Found:" >> /tmp/review_summary.md
-            
-            if [ ${{ inputs.language }} == "java" ]; then
-              if [ -f /tmp/review_results.json ]; then
-                echo "Java violations detected and reported above." >> /tmp/review_summary.md
-              else
-                echo "✅ No Java issues detected" >> /tmp/review_summary.md
-              fi
+            echo "## 🤖 Code Review" > /tmp/comment.md
+            echo "" >> /tmp/comment.md
+            if [ "${{ inputs.language }}" == "java" ]; then
+              echo "No Java files detected in this PR" >> /tmp/comment.md
+            else
+              echo "Skipping review for language: ${{ inputs.language }}" >> /tmp/comment.md
             fi
+            cat /tmp/comment.md
           fi
           
-          cat /tmp/review_summary.md
-          
-          # Store for comment step
+          # Store comment for next step
           echo "review_comment<<EOF" >> $GITHUB_OUTPUT
-          cat /tmp/review_summary.md >> $GITHUB_OUTPUT
+          cat /tmp/comment.md >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Post Review Comment on PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const fs = require('fs');
             const reviewComment = `${{ steps.parse-results.outputs.review_comment }}`;
             
-            // Post or update comment
-            github.rest.issues.createComment({
+            if (!reviewComment || reviewComment.trim().length === 0) {
+              console.log('No review comment to post');
+              return;
+            }
+            
+            // Find existing review comment to update or create new one
+            const comments = await github.rest.issues.listComments({
               issue_number: context.issue.number,
               owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: reviewComment
+              repo: context.repo.repo
             });
+            
+            const existingComment = comments.data.find(comment => 
+              comment.user.login === 'github-actions[bot]' && 
+              comment.body.includes('🤖 Automated Code Review')
+            );
+            
+            if (existingComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                comment_id: existingComment.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: reviewComment
+              });
+              console.log('Updated existing review comment');
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: reviewComment
+              });
+              console.log('Posted new review comment');
+            }
 
       - name: Check for critical issues
         id: check-critical
