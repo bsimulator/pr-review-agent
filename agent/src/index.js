@@ -27,7 +27,7 @@ const octokit = new Octokit({ auth: GITHUB_TOKEN });
 
 async function main() {
   try {
-    console.log(`\n Starting PR Review for #$${PR_NUMBER}\n`);
+    console.log(`\n🤖 Starting PR Review for #${PR_NUMBER}\n`);
 
     // Get changed files
     const { data: files } = await octokit.pulls.listFiles({
@@ -36,7 +36,7 @@ async function main() {
       pull_number: PR_NUMBER
     });
 
-    console.log(` Files changed: $${files.length}\n`);
+    console.log(`📁 Files changed: ${files.length}\n`);
 
     let allIssues = [];
     let analyzedCount = 0;
@@ -44,10 +44,10 @@ async function main() {
     // Analyze each file
     for (const file of files) {
       const filename = file.filename;
-      console.log(`   Analyzing: $${filename}`);
+      console.log(`   Analyzing: ${filename}`);
 
       try {
-        // Read file from disk (it'"'"'s already checked out)
+        // Read file from disk (it's already checked out)
         if (!fs.existsSync(filename)) {
           console.log(`      File not found on disk (might be deleted)`);
           continue;
@@ -59,23 +59,23 @@ async function main() {
           const result = JavaAnalyzer.analyze(fileContent, filename);
           if (result.issues && result.issues.length > 0) {
             allIssues.push(...result.issues);
-            console.log(`     Found $${result.issues.length} issues`);
+            console.log(`     Found ${result.issues.length} issues`);
             analyzedCount++;
           }
         } else if (filename.match(/\.(jsx?|tsx?)$/)) {
           const result = ReactAnalyzer.analyze(fileContent, filename);
           if (result.issues && result.issues.length > 0) {
             allIssues.push(...result.issues);
-            console.log(`     Found $${result.issues.length} issues`);
+            console.log(`     Found ${result.issues.length} issues`);
             analyzedCount++;
           }
         }
       } catch (err) {
-        console.error(`     Error analyzing $${filename}:`, err.message);
+        console.error(`     Error analyzing ${filename}:`, err.message);
       }
     }
 
-    console.log(`\n Analyzed $${analyzedCount} files, found $${allIssues.length} issues\n`);
+    console.log(`\n Analyzed ${analyzedCount} files, found ${allIssues.length} issues\n`);
 
     // Create summary comment
     const summary = createSummary(allIssues, files);
@@ -104,23 +104,23 @@ function createSummary(issues, files) {
   const infos = issues.filter(i => i.severity === 'info').length;
   const total = issues.length;
 
-  let summary = `##  Automated Code Review\n\n`;
-  summary += `**Files Analyzed:** $${files.length}\n\n`;
+  let summary = `## 🤖 Automated Code Review\n\n`;
+  summary += `**Files Analyzed:** ${files.length}\n\n`;
 
   summary += `### Review Summary\n`;
   summary += `| Severity | Count |\n`;
   summary += `|----------|-------|\n`;
-  summary += `|  Errors | $${errors} |\n`;
-  summary += `|  Warnings | $${warnings} |\n`;
-  summary += `| ? Info | $${infos} |\n`;
-  summary += `| **Total** | **$${total}** |\n\n`;
+  summary += `| ❌ Errors | ${errors} |\n`;
+  summary += `| ⚠️ Warnings | ${warnings} |\n`;
+  summary += `| ℹ️ Info | ${infos} |\n`;
+  summary += `| **Total** | **${total}** |\n\n`;
 
   if (total === 0) {
     summary += ` **Great job!** No issues found in your code.\n`;
   } else if (errors === 0) {
     summary += ` **No critical errors!** Please review the warnings and suggestions below.\n`;
   } else {
-    summary += ` **Please fix the $${errors} error(s) before merging.**\n`;
+    summary += ` **Please fix the ${errors} error(s) before merging.**\n`;
   }
 
   if (total > 0) {
@@ -134,24 +134,24 @@ function createSummary(issues, files) {
     for (const [file, fileIssues] of Object.entries(byFile)) {
       const fileErrors = fileIssues.filter(i => i.severity === 'error').length;
       const fileWarnings = fileIssues.filter(i => i.severity === 'warning').length;
-      summary += `\n**$${file}** ($${fileErrors} errors, $${fileWarnings} warnings)\n`;
+      summary += `\n**${file}** (${fileErrors} errors, ${fileWarnings} warnings)\n`;
 
       fileIssues.slice(0, 5).forEach(issue => {
-        const emoji = { '"'"'error'"'"': '', '"'"'warning'"'"': '', '"'"'info'"'"': '?' }[issue.severity] || '';
-        summary += `- $${emoji} $${issue.rule}: $${issue.message}\n`;
+        const emoji = { 'error': '❌', 'warning': '⚠️', 'info': 'ℹ️' }[issue.severity] || '📝';
+        summary += `- ${emoji} ${issue.rule}: ${issue.message}\n`;
         if (issue.suggestion) {
-          summary += `   $${issue.suggestion}\n`;
+          summary += `  💡 ${issue.suggestion}\n`;
         }
       });
 
       if (fileIssues.length > 5) {
-        summary += `- ... and $${fileIssues.length - 5} more\n`;
+        summary += `- ... and ${fileIssues.length - 5} more\n`;
       }
     }
   }
 
   summary += `\n---\n`;
-  summary += ` [View PR Review Agent](https://github.com/bsimulator/pr-review-agent)\n`;
+  summary += `📖 [View PR Review Agent](https://github.com/bsimulator/pr-review-agent)\n`;
 
   return summary;
 }
@@ -160,3 +160,4 @@ main().catch(err => {
   console.error('Fatal error:', err);
   process.exit(1);
 });
+
