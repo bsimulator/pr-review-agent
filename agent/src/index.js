@@ -1,197 +1,162 @@
-/**
- * PR Review Agent - Main Module
- * 
- * Reusable agent for reviewing pull requests.
- * Works in GitHub Actions, local CLI, and custom integrations.
- * 
- * Usage:
- * ```javascript
- * const PRReviewAgent = require('@pr-review/agent');
- * 
- * const agent = new PRReviewAgent({
- *   type: 'github-actions',  // or 'cli' or 'custom'
- * });
- * 
- * const results = await agent.review(changedFiles);
- * ```
- */
+#!/usr/bin/env node
 
+const fs = require('fs');
+const path = require('path');
+const { Octokit } = require('@octokit/rest');
 const JavaAnalyzer = require('./analyzers/javaAnalyzer');
 const ReactAnalyzer = require('./analyzers/reactAnalyzer');
-const CommentFormatter = require('./services/commentFormatter');
-const Logger = require('./utils/logger');
 
-class PRReviewAgent {
-  /**
-   * Initialize PR Review Agent
-   * @param {Object} config - Configuration object
-   * @param {string} config.type - Execution type: 'github-actions', 'cli', 'custom'
-   * @param {string} config.token - GitHub token (optional for GitHub Actions)
-   * @param {Object} config.analyzers - Custom analyzers to use
-   * @param {boolean} config.verbose - Verbose logging
-   */
-  constructor(config = {}) {
-    this.config = {
-      type: 'github-actions',
-      verbose: false,
-      ...config
-    };
+// Get environment variables
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const PR_NUMBER = parseInt(process.env.PR_NUMBER, 10);
+const REPO_OWNER = process.env.REPO_OWNER;
+const REPO_NAME = process.env.REPO_NAME;
 
-    this.logger = new Logger(this.config.verbose);
-    this.analyzers = this.config.analyzers || {
-      java: new JavaAnalyzer(),
-      react: new ReactAnalyzer()
-    };
+if (!GITHUB_TOKEN || !PR_NUMBER || !REPO_OWNER || !REPO_NAME) {
+  console.error('Missing required environment variables');
+  console.error({
+    GITHUB_TOKEN: !!GITHUB_TOKEN,
+    PR_NUMBER,
+    REPO_OWNER,
+    REPO_NAME
+  });
+  process.exit(1);
+}
 
-    if (this.config.type === 'github-actions' || this.config.token) {
-      // Lazy load GithubService only when needed
-      const GithubService = require('./services/githubService');
-      this.github = new GithubService({
-        token: this.config.token || process.env.GITHUB_TOKEN,
-        verbose: this.config.verbose
-      });
-    }
+const octokit = new Octokit({ auth: GITHUB_TOKEN });
 
-    this.formatter = new CommentFormatter();
-  }
+async function main() {
+  try {
+    console.log(`\n Starting PR Review for #$${PR_NUMBER}\n`);
 
-  /**
-   * Review changed files
-   * @param {Array} changedFiles - Array of file objects or paths
-   * @returns {Promise<Object>} Review results
-   */
-  async review(changedFiles) {
-    this.logger.log(`🔍 Starting PR review of ${changedFiles.length} files...`);
+    // Get changed files
+    const { data: files } = await octokit.pulls.listFiles({
+      owner: REPO_OWNER,
+      repo: REPO_NAME,
+      pull_number: PR_NUMBER
+    });
 
-    const allIssues = [];
-    const fileResults = {};
+    console.log(` Files changed: $${files.length}\n`);
 
-    for (const file of changedFiles) {
-      const filePath = typeof file === 'string' ? file : file.filename;
-      const content = typeof file === 'string' ? null : file.patch || file.content;
+    let allIssues = [];
+    let analyzedCount = 0;
 
-      this.logger.log(`📄 Analyzing: ${filePath}`);
+    // Analyze each file
+    for (const file of files) {
+      const filename = file.filename;
+      console.log(`   Analyzing: $${filename}`);
 
-      // Determine file type and analyze
-      const issues = await this.analyzeFile(filePath, content);
-      
-      if (issues.length > 0) {
-        allIssues.push(...issues);
-        fileResults[filePath] = issues;
-        this.logger.log(`   ❌ Found ${issues.length} issue(s)`);
-      } else {
-        fileResults[filePath] = [];
-        this.logger.log(`   ✅ No issues found`);
+      try {
+        // Read file from disk (it'"'"'s already checked out)
+        if (!fs.existsSync(filename)) {
+          console.log(`      File not found on disk (might be deleted)`);
+          continue;
+        }
+
+        const fileContent = fs.readFileSync(filename, 'utf-8');
+        
+        if (filename.endsWith('.java')) {
+          const result = JavaAnalyzer.analyze(fileContent, filename);
+          if (result.issues && result.issues.length > 0) {
+            allIssues.push(...result.issues);
+            console.log(`     Found $${result.issues.length} issues`);
+            analyzedCount++;
+          }
+        } else if (filename.match(/\.(jsx?|tsx?)$/)) {
+          const result = ReactAnalyzer.analyze(fileContent, filename);
+          if (result.issues && result.issues.length > 0) {
+            allIssues.push(...result.issues);
+            console.log(`     Found $${result.issues.length} issues`);
+            analyzedCount++;
+          }
+        }
+      } catch (err) {
+        console.error(`     Error analyzing $${filename}:`, err.message);
       }
     }
 
-    const summary = this.createSummary(allIssues, fileResults);
-    this.logger.log(`\n📊 Review complete: ${allIssues.length} total issue(s)`);
+    console.log(`\n Analyzed $${analyzedCount} files, found $${allIssues.length} issues\n`);
 
-    return {
-      success: true,
-      timestamp: new Date().toISOString(),
-      filesReviewed: changedFiles.length,
-      totalIssues: allIssues.length,
-      issues: allIssues,
-      byFile: fileResults,
-      summary: summary
-    };
-  }
+    // Create summary comment
+    const summary = createSummary(allIssues, files);
 
-  /**
-   * Analyze single file
-   * @private
-   */
-  async analyzeFile(filePath, content) {
-    const issues = [];
-
-    // Java files
-    if (filePath.endsWith('.java')) {
-      const javaIssues = this.analyzers.java.analyze(content || '', filePath);
-      issues.push(...javaIssues);
+    try {
+      await octokit.issues.createComment({
+        owner: REPO_OWNER,
+        repo: REPO_NAME,
+        issue_number: PR_NUMBER,
+        body: summary
+      });
+      console.log(' Posted review summary comment\n');
+    } catch (err) {
+      console.error(' Failed to post comment:', err.message);
     }
 
-    // React/TypeScript/JavaScript files
-    if (this.isReactFile(filePath)) {
-      const reactIssues = this.analyzers.react.analyze(content || '', filePath);
-      issues.push(...reactIssues);
-    }
-
-    return issues;
-  }
-
-  /**
-   * Check if file is React/JavaScript/TypeScript
-   * @private
-   */
-  isReactFile(filePath) {
-    const extensions = ['.jsx', '.tsx', '.ts', '.js', '.vue'];
-    return extensions.some(ext => filePath.endsWith(ext));
-  }
-
-  /**
-   * Create summary of issues
-   * @private
-   */
-  createSummary(allIssues, fileResults) {
-    const stats = {
-      total: allIssues.length,
-      errors: allIssues.filter(i => i.severity === 'error').length,
-      warnings: allIssues.filter(i => i.severity === 'warning').length,
-      info: allIssues.filter(i => i.severity === 'info').length,
-      fileCount: Object.keys(fileResults).length,
-      filesWithIssues: Object.keys(fileResults).filter(f => fileResults[f].length > 0).length
-    };
-
-    return stats;
-  }
-
-  /**
-   * Post comments to GitHub PR (GitHub Actions only)
-   * @param {string} owner - Repository owner
-   * @param {string} repo - Repository name
-   * @param {number} prNumber - Pull request number
-   * @param {Object} reviewResults - Results from review()
-   */
-  async postComments(owner, repo, prNumber, reviewResults) {
-    if (!this.github) {
-      throw new Error('GitHub service not initialized. Use GitHub token in config.');
-    }
-
-    this.logger.log(`📝 Posting comments to PR #${prNumber}...`);
-
-    // Post inline comments
-    for (const issue of reviewResults.issues) {
-      await this.github.postInlineComment(
-        owner,
-        repo,
-        prNumber,
-        issue
-      );
-    }
-
-    // Post summary comment
-    const summaryComment = this.formatter.formatSummary(reviewResults);
-    await this.github.postComment(
-      owner,
-      repo,
-      prNumber,
-      summaryComment
-    );
-
-    this.logger.log(`✅ Comments posted successfully`);
-  }
-
-  /**
-   * Add custom analyzer
-   * @param {string} fileType - File extension (e.g., 'py' for Python)
-   * @param {Object} analyzer - Analyzer instance with analyze() method
-   */
-  addAnalyzer(fileType, analyzer) {
-    this.analyzers[fileType] = analyzer;
-    this.logger.log(`✅ Custom analyzer added for .${fileType}`);
+  } catch (err) {
+    console.error(' Error:', err.message);
+    process.exit(1);
   }
 }
 
-module.exports = PRReviewAgent;
+function createSummary(issues, files) {
+  const errors = issues.filter(i => i.severity === 'error').length;
+  const warnings = issues.filter(i => i.severity === 'warning').length;
+  const infos = issues.filter(i => i.severity === 'info').length;
+  const total = issues.length;
+
+  let summary = `##  Automated Code Review\n\n`;
+  summary += `**Files Analyzed:** $${files.length}\n\n`;
+
+  summary += `### Review Summary\n`;
+  summary += `| Severity | Count |\n`;
+  summary += `|----------|-------|\n`;
+  summary += `|  Errors | $${errors} |\n`;
+  summary += `|  Warnings | $${warnings} |\n`;
+  summary += `| ? Info | $${infos} |\n`;
+  summary += `| **Total** | **$${total}** |\n\n`;
+
+  if (total === 0) {
+    summary += ` **Great job!** No issues found in your code.\n`;
+  } else if (errors === 0) {
+    summary += ` **No critical errors!** Please review the warnings and suggestions below.\n`;
+  } else {
+    summary += ` **Please fix the $${errors} error(s) before merging.**\n`;
+  }
+
+  if (total > 0) {
+    summary += `\n### Issues Found\n\n`;
+    const byFile = {};
+    issues.forEach(issue => {
+      if (!byFile[issue.file]) byFile[issue.file] = [];
+      byFile[issue.file].push(issue);
+    });
+
+    for (const [file, fileIssues] of Object.entries(byFile)) {
+      const fileErrors = fileIssues.filter(i => i.severity === 'error').length;
+      const fileWarnings = fileIssues.filter(i => i.severity === 'warning').length;
+      summary += `\n**$${file}** ($${fileErrors} errors, $${fileWarnings} warnings)\n`;
+
+      fileIssues.slice(0, 5).forEach(issue => {
+        const emoji = { '"'"'error'"'"': '', '"'"'warning'"'"': '', '"'"'info'"'"': '?' }[issue.severity] || '';
+        summary += `- $${emoji} $${issue.rule}: $${issue.message}\n`;
+        if (issue.suggestion) {
+          summary += `   $${issue.suggestion}\n`;
+        }
+      });
+
+      if (fileIssues.length > 5) {
+        summary += `- ... and $${fileIssues.length - 5} more\n`;
+      }
+    }
+  }
+
+  summary += `\n---\n`;
+  summary += ` [View PR Review Agent](https://github.com/bsimulator/pr-review-agent)\n`;
+
+  return summary;
+}
+
+main().catch(err => {
+  console.error('Fatal error:', err);
+  process.exit(1);
+});
