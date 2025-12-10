@@ -32,14 +32,23 @@ async function main(octokit) {
   try {
     console.log(`\n🤖 Starting PR Review for #${PR_NUMBER}\n`);
 
-    // Get changed files
-    const { data: files } = await octokit.pulls.listFiles({
-      owner: REPO_OWNER,
-      repo: REPO_NAME,
-      pull_number: PR_NUMBER
-    });
+    // Get changed files using git
+    const { execSync } = require('child_process');
+    let files = [];
+    
+    try {
+      // Get list of changed files between base and head
+      const output = execSync(`git diff --name-only origin/main...HEAD`, { encoding: 'utf-8' });
+      files = output.split('\n').filter(f => f.trim()).map(filename => ({ filename }));
+    } catch (err) {
+      console.log('⚠️  Could not get changed files from git, analyzing current directory...');
+      // Fallback: analyze all relevant files in the repo
+      const javaFiles = execSync(`find . -name "*.java" -type f 2>/dev/null || true`, { encoding: 'utf-8' }).split('\n').filter(f => f.trim());
+      const jsFiles = execSync(`find . -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" 2>/dev/null || true`, { encoding: 'utf-8' }).split('\n').filter(f => f.trim());
+      files = [...javaFiles, ...jsFiles].map(filename => ({ filename }));
+    }
 
-    console.log(`📁 Files changed: ${files.length}\n`);
+    console.log(`📁 Files to analyze: ${files.length}\n`);
 
     let allIssues = [];
     let analyzedCount = 0;
