@@ -1063,4 +1063,5 @@ class JavaAnalyzer {
   }
 }
 
-module.exports = JavaAnalyzer;
+// Export as instance so it can be used directly as: javaAnalyzer.analyze()
+module.exports = new JavaAnalyzer();
