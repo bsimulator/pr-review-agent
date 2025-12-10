@@ -1,8 +1,6 @@
 # Dependencies
 node_modules/
-package-lock.json
 yarn.lock
-
 # IDE
 .vscode/
 .idea/
@@ -10,30 +8,24 @@ yarn.lock
 *.swo
 *~
 .DS_Store
-
 # Testing
 coverage/
 .nyc_output/
-
 # Build
 dist/
 build/
-
 # Logs
 logs/
 *.log
 npm-debug.log*
 yarn-error.log*
-
 # Environment
 .env
 .env.local
 .env.*.local
-
 # OS
 .DS_Store
 Thumbs.db
-
 # Temporary
 tmp/
 temp/
