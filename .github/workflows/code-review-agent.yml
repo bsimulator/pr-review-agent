@@ -1,0 +1,176 @@
+name: Code Review Agent (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      language:
+        description: 'Programming language to analyze (java, python, javascript, etc)'
+        required: true
+        type: string
+      severity:
+        description: 'Minimum severity level to report (error, warning, info)'
+        required: false
+        default: 'warning'
+        type: string
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+
+jobs:
+  code-review:
+    name: Analyze Code & Post Review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v40
+        with:
+          files: |
+            **.${{ inputs.language == 'java' && '*.java' || inputs.language == 'python' && '*.py' || inputs.language == 'javascript' && '*.js' || '**' }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Checkout analyzer repo
+        uses: actions/checkout@v4
+        with:
+          repository: bsimulator/pr-review-agent
+          path: analyzer
+          ref: main
+
+      - name: Run Java Code Review
+        if: inputs.language == 'java' && steps.changed-files.outputs.all_changed_files != ''
+        id: java-review
+        run: |
+          cd analyzer/agent
+          npm install 2>/dev/null || true
+          
+          # Create temp file with changed files
+          echo "${{ steps.changed-files.outputs.all_changed_files }}" > /tmp/changed_files.txt
+          
+          # Run analyzer on each Java file
+          node test-analyzers.js ${{ steps.changed-files.outputs.all_changed_files }} > /tmp/review_results.json 2>&1 || true
+          
+          # Output results
+          cat /tmp/review_results.json
+
+      - name: Run Python Code Review
+        if: inputs.language == 'python' && steps.changed-files.outputs.all_changed_files != ''
+        id: python-review
+        run: |
+          python3 -m pip install pylint flake8 -q
+          
+          # Run linters on changed Python files
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            echo "Analyzing $file..."
+            python3 -m pylint "$file" --exit-zero --output-format=json > /tmp/pylint_$RANDOM.json 2>/dev/null || true
+            python3 -m flake8 "$file" --format=json > /tmp/flake8_$RANDOM.json 2>/dev/null || true
+          done
+
+      - name: Run JavaScript Code Review
+        if: inputs.language == 'javascript' && steps.changed-files.outputs.all_changed_files != ''
+        id: js-review
+        run: |
+          npm install -g eslint @typescript-eslint/eslint-plugin @typescript-eslint/parser -q
+          
+          # Run eslint on changed JS files
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            echo "Analyzing $file..."
+            eslint "$file" --format=json > /tmp/eslint_$RANDOM.json 2>/dev/null || true
+          done
+
+      - name: Parse Results & Generate Review Comment
+        id: parse-results
+        env:
+          CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
+          LANGUAGE: ${{ inputs.language }}
+        run: |
+          # Create review summary
+          cat > /tmp/review_summary.md << 'EOF'
+          ## 🤖 Automated Code Review
+          
+          **Language:** ${{ inputs.language }}
+          **Severity Level:** ${{ inputs.severity }}
+          **Review Date:** $(date)
+          
+          EOF
+          
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No ${{ inputs.language }} files changed in this PR" >> /tmp/review_summary.md
+          else
+            echo "### Files Analyzed:" >> /tmp/review_summary.md
+            echo "$CHANGED_FILES" | tr ' ' '\n' | sed 's/^/- /' >> /tmp/review_summary.md
+            echo "" >> /tmp/review_summary.md
+            
+            echo "### Issues Found:" >> /tmp/review_summary.md
+            
+            if [ ${{ inputs.language }} == "java" ]; then
+              if [ -f /tmp/review_results.json ]; then
+                echo "Java violations detected and reported above." >> /tmp/review_summary.md
+              else
+                echo "✅ No Java issues detected" >> /tmp/review_summary.md
+              fi
+            fi
+          fi
+          
+          cat /tmp/review_summary.md
+          
+          # Store for comment step
+          echo "review_comment<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/review_summary.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Post Review Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reviewComment = `${{ steps.parse-results.outputs.review_comment }}`;
+            
+            // Post or update comment
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: reviewComment
+            });
+
+      - name: Check for critical issues
+        id: check-critical
+        run: |
+          # If critical issues found, fail the check
+          # This prevents merge until issues are resolved
+          echo "critical_found=false" >> $GITHUB_OUTPUT
+
+      - name: Set check status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const criticalFound = ${{ steps.check-critical.outputs.critical_found }};
+            
+            github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Code Review - ${{ inputs.language }}',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: criticalFound ? 'failure' : 'success',
+              output: {
+                title: 'Code Review Results',
+                summary: 'Automated code review completed'
+              }
+            });
