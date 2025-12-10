@@ -1,0 +1,382 @@
+================================================================================
+🤖 CODE REVIEW AGENT - REUSABLE WORKFLOW SETUP GUIDE
+================================================================================
+
+Created: December 10, 2025
+Version: 1.0
+Status: ✅ Ready to Deploy
+
+================================================================================
+📋 WHAT IS THIS?
+================================================================================
+
+A reusable GitHub Actions workflow that:
+  ✅ Automatically reviews code on pull requests
+  ✅ Posts detailed comments on changed files
+  ✅ Works across ANY repository
+  ✅ Supports Java, Python, JavaScript, and more
+  ✅ Can be called from baccarat_simulator, your-project, or ANY repo
+
+Think of it as a "shared code review service" that multiple teams can use!
+
+================================================================================
+🎯 HOW IT WORKS
+================================================================================
+
+Step 1: PR Created in ANY repo
+Step 2: GitHub Actions triggers automatically
+Step 3: Calls the CODE REVIEW AGENT from pr-review-agent repo
+Step 4: Agent analyzes the changed code
+Step 5: Agent posts review comments on the PR
+Step 6: Check passes/fails based on findings
+Step 7: Developers can see feedback and fix issues
+
+Timeline: ~30-60 seconds from PR creation to review posted
+
+================================================================================
+🚀 QUICK START (3 STEPS)
+================================================================================
+
+STEP 1: Add to baccarat_simulator
+────────────────────────────────
+
+In your baccarat_simulator repo, create:
+  .github/workflows/code-review.yml
+
+Copy this content:
+────────────────────────────────────────────────────────────────────────────
+name: Code Review Agent
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  code-review:
+    uses: bsimulator/pr-review-agent/.github/workflows/code-review-agent.yml@main
+    with:
+      language: 'java'
+      severity: 'warning'
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+────────────────────────────────────────────────────────────────────────────
+
+
+STEP 2: Commit and Push
+──────────────────────
+
+$ cd baccarat_simulator
+$ git add .github/workflows/code-review.yml
+$ git commit -m "ci: add automated code review agent"
+$ git push origin main
+
+
+STEP 3: Create a PR to Test
+───────────────────────────
+
+Create a test PR in baccarat_simulator with code changes.
+The agent will automatically review it and post comments!
+
+
+================================================================================
+📁 FILE LOCATIONS
+================================================================================
+
+In pr-review-agent repo:
+  ├── .github/
+  │   └── workflows/
+  │       └── code-review-agent.yml          ← THE AGENT (reusable)
+  ├── CODE_REVIEW_AGENT_USAGE.yml            ← Example caller
+  └── CODE_REVIEW_AGENT_SETUP.txt            ← This file
+
+In any other repo (e.g., baccarat_simulator):
+  └── .github/
+      └── workflows/
+          └── code-review.yml                ← Caller workflow
+
+================================================================================
+⚙️ CONFIGURATION OPTIONS
+================================================================================
+
+In your caller workflow (.github/workflows/code-review.yml):
+
+Option 1: Language
+─────────────────
+with:
+  language: 'java'
+
+Options: 'java', 'python', 'javascript', 'typescript', 'go', 'rust'
+
+
+Option 2: Severity Level
+────────────────────────
+with:
+  severity: 'error'  # Only report critical issues
+  severity: 'warning'  # Report warnings + errors (default)
+  severity: 'info'  # Report all issues including info
+
+
+Option 3: Full Configuration
+──────────────────────────────
+with:
+  language: 'java'
+  severity: 'warning'
+
+
+================================================================================
+🔍 WHAT THE AGENT ANALYZES
+================================================================================
+
+FOR JAVA FILES:
+  ✓ 78 advanced code quality rules
+  ✓ Concurrency & thread safety issues
+  ✓ Memory management problems
+  ✓ Security vulnerabilities
+  ✓ Design pattern violations
+  ✓ And 48 more advanced rules!
+
+FOR PYTHON FILES:
+  ✓ PEP 8 style violations
+  ✓ Import errors
+  ✓ Code complexity
+  ✓ Security issues
+
+FOR JAVASCRIPT FILES:
+  ✓ ES6+ best practices
+  ✓ Async/await patterns
+  ✓ Error handling
+  ✓ Performance issues
+
+================================================================================
+💬 EXAMPLE PR COMMENT
+================================================================================
+
+When the agent reviews a PR, it posts a comment like:
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ 🤖 Automated Code Review                                             │
+│                                                                      │
+│ Language: java                                                       │
+│ Severity Level: warning                                              │
+│ Review Date: 2025-12-10 14:32:15 UTC                                │
+│                                                                      │
+│ Files Analyzed:                                                      │
+│ - src/main/java/com/example/Game.java                               │
+│ - src/main/java/com/example/Player.java                             │
+│                                                                      │
+│ Issues Found:                                                        │
+│                                                                      │
+│ ⚠️ Game.java (line 42):                                              │
+│    Potential null pointer dereference                               │
+│                                                                      │
+│ ✓ Player.java:                                                       │
+│   No issues detected                                                │
+│                                                                      │
+│ Summary: 1 warning found, 0 errors                                  │
+└──────────────────────────────────────────────────────────────────────┘
+
+Developers can then click the file/line to see the exact issue!
+
+================================================================================
+🔧 ADVANCED SETUP (Multiple Languages)
+================================================================================
+
+If your repo has MULTIPLE languages (Java + Python):
+
+name: Code Review Agent (Multi-Language)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  java-review:
+    uses: bsimulator/pr-review-agent/.github/workflows/code-review-agent.yml@main
+    with:
+      language: 'java'
+      severity: 'error'
+
+  python-review:
+    uses: bsimulator/pr-review-agent/.github/workflows/code-review-agent.yml@main
+    with:
+      language: 'python'
+      severity: 'warning'
+
+Both will run in parallel and post separate review comments!
+
+================================================================================
+📊 EXPECTED TIMELINE
+================================================================================
+
+Time    | Event
+--------|────────────────────────────────────────────────────
+0:00    | You create PR on GitHub
+0:05    | GitHub Actions triggers automatically
+0:10    | Agent starts analyzing code
+0:20    | Agent posts review comment
+0:30    | Check status updated (pass/fail)
+0:45    | You see feedback on PR page
+
+Total: ~45 seconds from PR creation to review posted!
+
+================================================================================
+✅ CHECKLIST - DEPLOYING THE AGENT
+================================================================================
+
+Agent Setup (in pr-review-agent repo):
+  ✅ Create .github/workflows/code-review-agent.yml
+  ✅ Commit and push
+  ✅ Verify workflow is visible in GitHub Actions tab
+
+Caller Setup (in baccarat_simulator):
+  ☐ Create .github/workflows/code-review.yml
+  ☐ Copy caller configuration from CODE_REVIEW_AGENT_USAGE.yml
+  ☐ Update language setting if needed
+  ☐ Commit and push
+
+Testing:
+  ☐ Create test PR in baccarat_simulator
+  ☐ Make a code change (add new file or modify)
+  ☐ Push to test branch
+  ☐ Create PR from GitHub web interface
+  ☐ Wait 30-60 seconds
+  ☐ See review comment appear automatically ✨
+
+================================================================================
+🐛 TROUBLESHOOTING
+================================================================================
+
+Problem 1: Workflow doesn't run
+─────────────────────────────
+  • Check: .github/workflows/code-review.yml exists
+  • Check: File is in correct repo (baccarat_simulator)
+  • Check: PR has actual code changes
+  • Solution: Manually trigger from GitHub Actions tab
+
+Problem 2: Agent repo not found
+──────────────────────────────
+  • Check: Repository is 'bsimulator/pr-review-agent'
+  • Check: Branch is 'main'
+  • Check: Your user has access to the repo
+  • Solution: Use full path: bsimulator/pr-review-agent
+
+Problem 3: No comments posted
+────────────────────────────
+  • Check: GITHUB_TOKEN permission is set
+  • Check: Workflow completed successfully (green ✓)
+  • Check: Analyze changed files with correct extension
+  • Solution: Add print statements to debug
+
+Problem 4: Too many comments/spam
+─────────────────────────────────
+  • Solution: Increase severity level to 'error'
+  • Solution: Filter specific file patterns
+  • Solution: Disable for certain files
+
+================================================================================
+🔐 PERMISSIONS & SECURITY
+================================================================================
+
+The workflow uses GITHUB_TOKEN which:
+  ✅ Is automatically provided by GitHub Actions
+  ✅ Has permission to read code
+  ✅ Has permission to write comments
+  ✅ Is scoped to current repo only
+  ✅ Expires after workflow completes
+  ✅ Never exposes secrets
+
+NO SENSITIVE DATA is sent anywhere:
+  • Code is analyzed locally in GitHub Actions
+  • Results are posted only to YOUR repos
+  • No external API calls (unless you add them)
+
+================================================================================
+📚 USEFUL LINKS
+================================================================================
+
+GitHub Actions Docs:
+  https://docs.github.com/en/actions
+
+Reusable Workflows:
+  https://docs.github.com/en/actions/using-workflows/reusing-workflows
+
+Workflow Syntax:
+  https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions
+
+pr-review-agent Repo:
+  https://github.com/bsimulator/pr-review-agent
+
+================================================================================
+💡 TIPS & TRICKS
+================================================================================
+
+Tip 1: Schedule reviews
+──────────────────────
+Instead of only on PR creation, also review on schedule:
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  schedule:
+    - cron: '0 9 * * MON'  # Every Monday at 9 AM
+
+Tip 2: Conditional execution
+──────────────────────────────
+Only review Java files if they changed:
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**.java'
+
+Tip 3: Skip review for certain PRs
+───────────────────────────────────
+Add [skip-review] to PR title to disable agent:
+
+if: !contains(github.event.pull_request.title, '[skip-review]')
+
+Tip 4: Different rules per branch
+──────────────────────────────────
+Run stricter review for main branch:
+
+with:
+  severity: ${{ github.ref == 'refs/heads/main' && 'error' || 'warning' }}
+
+================================================================================
+🎓 LEARNING RESOURCES
+================================================================================
+
+Want to learn more about GitHub Actions?
+  1. Official GitHub Actions docs (link above)
+  2. GitHub Actions examples: https://github.com/actions
+  3. Community workflows: https://github.com/orgs/actions/repositories
+
+Want to extend the agent?
+  1. Edit .github/workflows/code-review-agent.yml
+  2. Add new analysis steps
+  3. Customize comment format
+  4. Add new languages
+
+================================================================================
+✨ SUMMARY
+================================================================================
+
+You now have:
+  ✅ A reusable code review agent in pr-review-agent repo
+  ✅ Configuration guide for other repos
+  ✅ Example caller workflow
+  ✅ Full documentation
+
+Next steps:
+  1. Deploy agent to pr-review-agent repo
+  2. Add caller to baccarat_simulator repo
+  3. Test with a PR
+  4. Iterate and improve!
+
+Questions? Check the troubleshooting section above!
+
+================================================================================
+Generated: December 10, 2025
+Status: ✅ READY TO DEPLOY
+================================================================================

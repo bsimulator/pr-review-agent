@@ -1,0 +1,38 @@
+name: Use Code Review Agent (Template for other repos)
+
+# ============================================================================
+# INSTRUCTIONS: How to use this workflow in ANY repository
+# ============================================================================
+#
+# 1. Copy this file to your repo: .github/workflows/code-review.yml
+# 2. Update the 'repository-owner/repo' in the 'uses' field (currently 
+#    bsimulator/pr-review-agent) - this is where the AGENT lives
+# 3. Set the 'language' input to match your repo type
+# 4. Commit and push - it will run on next PR!
+#
+# Example for different languages:
+#   Java:       language: 'java'
+#   Python:     language: 'python'
+#   JavaScript: language: 'javascript'
+#
+# The AGENT will automatically:
+#   ✓ Detect changed files
+#   ✓ Run code analysis
+#   ✓ Post review comments on the PR
+#   ✓ Set check status (pass/fail)
+#
+# ============================================================================
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  call-code-review-agent:
+    name: Code Review Agent
+    uses: bsimulator/pr-review-agent/.github/workflows/code-review-agent.yml@main
+    with:
+      language: 'java'  # Change this to 'python', 'javascript', etc.
+      severity: 'warning'
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
