@@ -1,0 +1,38 @@
+{
+  "name": "@pr-review/agent",
+  "version": "2.0.0",
+  "description": "Reusable PR review agent for Java and React code - Token-free, GitHub Actions native",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "test": "jest",
+    "lint": "eslint src/",
+    "analyze": "node src/cli.js"
+  },
+  "keywords": [
+    "pr-review",
+    "code-review",
+    "github",
+    "automation",
+    "java",
+    "react",
+    "github-actions"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/pr-review-agent"
+  },
+  "dependencies": {
+    "@octokit/rest": "^21.0.0",
+    "minimist": "^1.2.8"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "eslint": "^8.0.0"
+  }
+}

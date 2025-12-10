@@ -1,0 +1,191 @@
+name: PR Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+      - develop
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: 'backend/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: npm ci
+
+      - name: Run PR Review
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            // Load analyzers
+            const JavaAnalyzer = require('./backend/src/analyzers/javaAnalyzer.js');
+            const ReactAnalyzer = require('./backend/src/analyzers/reactAnalyzer.js');
+            
+            // Get PR details
+            const prNumber = context.issue.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            
+            console.log(`\n=== Reviewing PR #${prNumber} ===`);
+            
+            // Get changed files
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner,
+              repo,
+              pull_number: prNumber
+            });
+            
+            const reviews = [];
+            
+            // Analyze each file
+            for (const file of files) {
+              const filename = file.filename;
+              const patch = file.patch || '';
+              
+              console.log(`Analyzing: ${filename}`);
+              
+              // Java files
+              if (filename.endsWith('.java')) {
+                const javaReview = JavaAnalyzer.analyze(filename, patch);
+                if (javaReview.issues.length > 0) {
+                  reviews.push(...javaReview.issues);
+                }
+              }
+              
+              // React/JS/TS files
+              if (filename.match(/\.(jsx?|tsx?)$/)) {
+                const reactReview = ReactAnalyzer.analyze(filename, patch);
+                if (reactReview.issues.length > 0) {
+                  reviews.push(...reactReview.issues);
+                }
+              }
+            }
+            
+            // Post comments if issues found
+            if (reviews.length > 0) {
+              // Group by file
+              const byFile = {};
+              reviews.forEach(review => {
+                if (!byFile[review.file]) byFile[review.file] = [];
+                byFile[review.file].push(review);
+              });
+              
+              // Post inline comments
+              for (const [file, issues] of Object.entries(byFile)) {
+                for (const issue of issues) {
+                  const comment = formatComment(issue);
+                  
+                  try {
+                    await github.rest.pulls.createReviewComment({
+                      owner,
+                      repo,
+                      pull_number: prNumber,
+                      body: comment,
+                      commit_id: context.payload.pull_request.head.sha,
+                      path: file,
+                      line: issue.line
+                    });
+                  } catch (err) {
+                    console.warn(`Could not post inline comment: ${err.message}`);
+                    // Fall back to PR comment
+                    await github.rest.issues.createComment({
+                      owner,
+                      repo,
+                      issue_number: prNumber,
+                      body: comment
+                    });
+                  }
+                }
+              }
+              
+              // Post summary
+              const summary = createSummary(reviews);
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: summary
+              });
+              
+              console.log(`Posted ${reviews.length} review comments`);
+            } else {
+              console.log('✓ No issues found');
+            }
+            
+            function formatComment(review) {
+              const severityEmoji = {
+                'error': '❌',
+                'warning': '⚠️',
+                'info': 'ℹ️'
+              };
+              
+              let comment = `${severityEmoji[review.severity] || '📝'} **${review.rule}** (${review.severity})\n\n`;
+              comment += `${review.message}\n\n`;
+              if (review.suggestion) {
+                comment += `💡 Suggestion: ${review.suggestion}`;
+              }
+              return comment;
+            }
+            
+            function createSummary(reviews) {
+              const errors = reviews.filter(r => r.severity === 'error').length;
+              const warnings = reviews.filter(r => r.severity === 'warning').length;
+              const infos = reviews.filter(r => r.severity === 'info').length;
+              
+              let summary = `## 🤖 Automated Code Review\n\n`;
+              summary += `- ❌ **Errors**: ${errors}\n`;
+              summary += `- ⚠️ **Warnings**: ${warnings}\n`;
+              summary += `- ℹ️ **Info**: ${infos}\n`;
+              summary += `- **Total Issues**: ${reviews.length}\n\n`;
+              
+              if (errors === 0 && warnings === 0) {
+                summary += `✅ Great job! No critical issues found.\n`;
+              } else {
+                summary += `### Issues by File\n\n`;
+                
+                const byFile = {};
+                reviews.forEach(r => {
+                  if (!byFile[r.file]) byFile[r.file] = [];
+                  byFile[r.file].push(r);
+                });
+                
+                for (const [file, issues] of Object.entries(byFile)) {
+                  summary += `**${file}** (${issues.length} issues)\n`;
+                  issues.forEach(issue => {
+                    const emoji = {'error': '❌', 'warning': '⚠️', 'info': 'ℹ️'}[issue.severity] || '📝';
+                    summary += `- ${emoji} Line ${issue.line}: ${issue.message}\n`;
+                  });
+                  summary += '\n';
+                }
+              }
+              
+              return summary;
+            }
+
+      - name: Run Code Review on Push
+        if: github.event_name == 'push'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            console.log('Code review on push - checking recent commits');
+            // Can implement commit message analysis or other checks here
