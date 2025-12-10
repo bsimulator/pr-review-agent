@@ -53,15 +53,18 @@ jobs:
         if: inputs.language == 'java'
         id: analysis
         run: |
-          cd $GITHUB_WORKSPACE/analyzer/agent
-          npm install --production 2>/dev/null || true
-          
           node << 'SCRIPT_END' > /tmp/review.txt
           const fs = require('fs');
-          const javaAnalyzer = require('./src/analyzers/javaAnalyzer.js');
+          const path = require('path');
+          
+          // Load the analyzer from the checked-out analyzer repo
+          const javaAnalyzer = require('./analyzer/agent/src/analyzers/javaAnalyzer.js');
           
           const filesStr = '${{ steps.changed-files.outputs.all_changed_files }}';
           const files = filesStr.split(/\s+/).filter(f => f && f.endsWith('.java'));
+          
+          console.log('Found files:', files);
+          console.log('Current dir:', process.cwd());
           
           if (files.length === 0) {
             console.log('No Java files found');
@@ -70,11 +73,19 @@ jobs:
           
           let review = '## 🤖 Automated Code Review (Java)\n\n';
           let totalIssues = 0;
+          let filesAnalyzed = 0;
           
           files.forEach(file => {
-            if (!fs.existsSync(file)) return;
+            const filePath = path.join(process.cwd(), file);
+            console.log('Checking file:', filePath, 'Exists:', fs.existsSync(filePath));
             
-            const code = fs.readFileSync(file, 'utf8');
+            if (!fs.existsSync(filePath)) {
+              console.log('File not found:', file);
+              return;
+            }
+            
+            filesAnalyzed++;
+            const code = fs.readFileSync(filePath, 'utf8');
             const violations = javaAnalyzer.analyze(code);
             
             if (violations.length > 0) {
@@ -89,6 +100,8 @@ jobs:
               });
             }
           });
+          
+          review += `\n**Files analyzed:** ${filesAnalyzed}\n`;
           
           if (totalIssues === 0) {
             review = '## 🤖 Automated Code Review\n\n✅ No issues found!';
