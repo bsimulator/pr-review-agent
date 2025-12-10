@@ -3,6 +3,9 @@ name: PR Code Review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    branches:
+      - main
+      - develop
   push:
     branches:
       - main
@@ -23,10 +26,10 @@ jobs:
         with:
           node-version: '18'
           cache: 'npm'
-          cache-dependency-path: 'backend/package-lock.json'
+          cache-dependency-path: 'agent/package-lock.json'
 
       - name: Install dependencies
-        working-directory: ./backend
+        working-directory: ./agent
         run: npm ci
 
       - name: Run PR Review
@@ -38,8 +41,8 @@ jobs:
             const path = require('path');
             
             // Load analyzers
-            const JavaAnalyzer = require('./backend/src/analyzers/javaAnalyzer.js');
-            const ReactAnalyzer = require('./backend/src/analyzers/reactAnalyzer.js');
+            const JavaAnalyzer = require('./agent/src/analyzers/javaAnalyzer.js');
+            const ReactAnalyzer = require('./agent/src/analyzers/reactAnalyzer.js');
             
             // Get PR details
             const prNumber = context.issue.number;
