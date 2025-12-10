@@ -1,0 +1,15 @@
+name: Code Review Agent
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  code-review:
+    name: Automated Code Review
+    uses: bsimulator/pr-review-agent/.github/workflows/code-review-agent.yml@feature/test-agent-review
+    with:
+      language: 'java'
+      severity: 'warning'
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
