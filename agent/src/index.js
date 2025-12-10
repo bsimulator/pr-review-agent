@@ -18,7 +18,6 @@
 
 const JavaAnalyzer = require('./analyzers/javaAnalyzer');
 const ReactAnalyzer = require('./analyzers/reactAnalyzer');
-const GithubService = require('./services/githubService');
 const CommentFormatter = require('./services/commentFormatter');
 const Logger = require('./utils/logger');
 
@@ -45,6 +44,8 @@ class PRReviewAgent {
     };
 
     if (this.config.type === 'github-actions' || this.config.token) {
+      // Lazy load GithubService only when needed
+      const GithubService = require('./services/githubService');
       this.github = new GithubService({
         token: this.config.token || process.env.GITHUB_TOKEN,
         verbose: this.config.verbose
