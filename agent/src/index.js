@@ -2,7 +2,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const { Octokit } = require('@octokit/rest');
 const JavaAnalyzer = require('./analyzers/javaAnalyzer');
 const ReactAnalyzer = require('./analyzers/reactAnalyzer');
 
@@ -23,9 +22,13 @@ if (!GITHUB_TOKEN || !PR_NUMBER || !REPO_OWNER || !REPO_NAME) {
   process.exit(1);
 }
 
-const octokit = new Octokit({ auth: GITHUB_TOKEN });
+async function initAndRun() {
+  const { Octokit } = await import('@octokit/rest');
+  const octokit = new Octokit({ auth: GITHUB_TOKEN });
+  await main(octokit);
+}
 
-async function main() {
+async function main(octokit) {
   try {
     console.log(`\n🤖 Starting PR Review for #${PR_NUMBER}\n`);
 
@@ -156,8 +159,9 @@ function createSummary(issues, files) {
   return summary;
 }
 
-main().catch(err => {
+initAndRun().catch(err => {
   console.error('Fatal error:', err);
   process.exit(1);
+});
 });
 
