@@ -53,12 +53,20 @@ function getChangedFiles() {
         .filter(f => f.trim())
         .filter(f => f.match(/\.(java|jsx?|tsx?)$/))
         .filter(f => {
-          // Explicitly exclude all agent infrastructure files
-          if (f.includes('agent/')) return false;
-          if (f.includes('src/')) return false;
-          if (f.includes('analyzer')) return false;
-          if (f.includes('service')) return false;
-          if (f.includes('utils')) return false;
+          // CRITICAL: Exclude ALL agent infrastructure files
+          const lowerF = f.toLowerCase();
+          
+          // Exclude entire agent directory
+          if (f.startsWith('agent/') || f.includes('/agent/')) return false;
+          
+          // Exclude src directory (agent's own code)
+          if (f.startsWith('src/') || f.includes('/src/')) return false;
+          
+          // Exclude specific agent files
+          if (f.endsWith('index.js') || f.endsWith('index.jsx')) return false;
+          if (lowerF.includes('analyzer') || lowerF.includes('service')) return false;
+          if (lowerF.includes('comprehensive') || lowerF.includes('sample-test')) return false;
+          
           return true;
         })
         .map(filename => ({ filename }));
@@ -78,7 +86,12 @@ function getChangedFiles() {
       })
         .split('\n')
         .filter(f => f.trim())
-        .filter(f => !f.includes('agent/') && !f.includes('src/'));
+        .filter(f => {
+          // CRITICAL: Exclude agent infrastructure entirely
+          if (f.startsWith('agent/') || f.includes('/agent/')) return false;
+          if (f.startsWith('src/') || f.includes('/src/')) return false;
+          return true;
+        });
         
       const jsFiles = execSync(`find . \\( -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" \\) -type f 2>/dev/null || true`, { 
         encoding: 'utf-8',
@@ -86,7 +99,15 @@ function getChangedFiles() {
       })
         .split('\n')
         .filter(f => f.trim())
-        .filter(f => !f.includes('agent/') && !f.includes('src/'));
+        .filter(f => {
+          // CRITICAL: Exclude agent infrastructure entirely
+          if (f.startsWith('agent/') || f.includes('/agent/')) return false;
+          if (f.startsWith('src/') || f.includes('/src/')) return false;
+          if (f.includes('index.js') && !f.startsWith('test-')) return false;  // Skip index.js files
+          if (f.includes('analyzer') || f.includes('service')) return false;
+          if (f.includes('comprehensive') || f.includes('sample-test')) return false;
+          return true;
+        });
         
       files = [...javaFiles, ...jsFiles].map(filename => ({ filename }));
     } catch (err) {
