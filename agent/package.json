@@ -28,8 +28,6 @@
     "url": "https://github.com/yourusername/pr-review-agent"
   },
   "dependencies": {
-    "@octokit/rest": "^21.0.0",
-    "minimist": "^1.2.8"
   },
   "devDependencies": {
     "jest": "^29.0.0",
