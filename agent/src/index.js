@@ -38,43 +38,83 @@ function main() {
 
 function getChangedFiles() {
   try {
-    // Fetch base branch
+    const { execSync } = require('child_process');
+    let files = [];
+
     try {
-      execSync(`git fetch origin ${BASE_REF}:${BASE_REF}`, {
-        stdio: 'pipe'
+      // Get list of changed files between base and head
+      const output = execSync(`git diff --name-only origin/${BASE_REF}...HEAD`, { 
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe']
       });
-    } catch (e) {}
+      
+      files = output
+        .split('\n')
+        .filter(f => f.trim())
+        .filter(f => f.match(/\.(java|jsx?|tsx?)$/))
+        .filter(f => {
+          // Explicitly exclude all agent infrastructure files
+          if (f.includes('agent/')) return false;
+          if (f.includes('src/')) return false;
+          if (f.includes('analyzer')) return false;
+          if (f.includes('service')) return false;
+          if (f.includes('utils')) return false;
+          return true;
+        })
+        .map(filename => ({ filename }));
+        
+      if (files.length > 0) {
+        return files;
+      }
+    } catch (err) {
+      console.log('⚠️  Could not get changed files from git');
+    }
 
-    // Get diff
-    const output = execSync(`git diff --name-only ${BASE_REF}...${HEAD_REF}`, {
-      encoding: 'utf-8'
-    });
+    // Fallback: analyze all relevant files in repo (excluding agent)
+    try {
+      const javaFiles = execSync(`find . -name "*.java" -type f 2>/dev/null || true`, { 
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      })
+        .split('\n')
+        .filter(f => f.trim())
+        .filter(f => !f.includes('agent/') && !f.includes('src/'));
+        
+      const jsFiles = execSync(`find . \\( -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" \\) -type f 2>/dev/null || true`, { 
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      })
+        .split('\n')
+        .filter(f => f.trim())
+        .filter(f => !f.includes('agent/') && !f.includes('src/'));
+        
+      files = [...javaFiles, ...jsFiles].map(filename => ({ filename }));
+    } catch (err) {
+      // Silent catch
+    }
 
-    return output
-      .split('\n')
-      .filter(f => f.trim())
-      .filter(f => f.match(/\.(java|jsx?|tsx?)$/))
-      .filter(f => !f.includes('agent/') && !f.includes('src/analyzers/') && !f.startsWith('src/'));
+    return files;
   } catch {
     return [];
   }
 }
 
 function analyzeFiles(files) {
-  const javaAnalyzer = new JavaAnalyzer();
-  const reactAnalyzer = new ReactAnalyzer();
+  const javaAnalyzer = require('./analyzers/javaAnalyzer');  // Already an instance
+  const ReactAnalyzerClass = require('./analyzers/reactAnalyzer');
+  const reactAnalyzer = new ReactAnalyzerClass();
   const issues = [];
 
   for (const file of files) {
-    console.log(`📄 ${file}`);
+    console.log(`📄 ${file.filename}`);
     try {
-      const content = fs.readFileSync(file, 'utf-8');
+      const content = fs.readFileSync(file.filename, 'utf-8');
       let fileIssues = [];
 
-      if (file.endsWith('.java')) {
-        fileIssues = javaAnalyzer.analyze(content, file);
-      } else if (file.match(/\.(jsx?|tsx?)$/)) {
-        fileIssues = reactAnalyzer.analyze(content, file);
+      if (file.filename.endsWith('.java')) {
+        fileIssues = javaAnalyzer.analyze(content, file.filename);
+      } else if (file.filename.match(/\.(jsx?|tsx?)$/)) {
+        fileIssues = reactAnalyzer.analyze(content, file.filename);
       }
 
       if (fileIssues.length > 0) {
